@@ -7,6 +7,8 @@ let COST_PER_RESULT = 0.00075;
 let NICHE = localStorage.getItem('adspy_niche') || '';
 let SORT = 'meta';
 let RENDER_LIMIT = 60; // cuántas tarjetas mostrar de golpe (paginado)
+let ADV_FILTER = null;  // filtrar por anunciante (desde la pestaña Creadores)
+let CREADORES = [];     // ranking de creadores del nicho actual
 
 const BUCKETS = [
   { k: 'siempre', l: 'Desde siempre (+2 años)' },
@@ -120,7 +122,7 @@ async function loadResults() {
     ADS = d.ads || [];
     if (d.query) document.getElementById('q').value = d.query;
   } catch (e) { ADS = []; }
-  RENDER_LIMIT = 60;
+  RENDER_LIMIT = 60; ADV_FILTER = null;
   renderFilters(); render();
   if (ADS.length) setStatus(`📦 ${ADS.length} anuncios scrapeados (guardados) en “${esc(NICHE)}”. Filtra/ordena ⤴`);
 }
@@ -164,11 +166,51 @@ function setCount(n) {
 
 // ---------- vistas / pestañas ----------
 function showView(v) {
-  document.getElementById('view-buscar').style.display = v === 'buscar' ? '' : 'none';
-  document.getElementById('view-seleccionados').style.display = v === 'seleccionados' ? '' : 'none';
+  ['buscar', 'seleccionados', 'creadores'].forEach(name => {
+    const el = document.getElementById('view-' + name);
+    if (el) el.style.display = (name === v) ? '' : 'none';
+  });
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
   if (v === 'seleccionados') renderSel();
+  if (v === 'creadores') renderCreadores();
 }
+
+// ---------- pestaña Creadores (quién escala) ----------
+function renderCreadores() {
+  const cont = document.getElementById('creadoresList');
+  if (!cont) return;
+  const map = {};
+  ADS.forEach(a => {
+    const k = a.advertiser || '(sin nombre)';
+    if (!map[k]) map[k] = { name: k, count: 0, videos: 0, maxDays: -1, durLabel: '?', dests: {} };
+    const m = map[k];
+    m.count++;
+    if (a.has_video) m.videos++;
+    if ((a.days_active ?? -1) > m.maxDays) { m.maxDays = a.days_active ?? -1; m.durLabel = a.duration_label || '?'; }
+    if (a.dest_type && a.dest_type !== 'ninguno') m.dests[a.dest_type] = (m.dests[a.dest_type] || 0) + 1;
+  });
+  CREADORES = Object.values(map).sort((x, y) => (y.count - x.count) || (y.maxDays - x.maxDays));
+  document.getElementById('creadoresInfo').textContent = `${CREADORES.length} creadores · ${ADS.length} anuncios en "${NICHE}"`;
+  if (!ADS.length) { cont.innerHTML = '<div class="status">No hay anuncios en este nicho todavía. Haz una búsqueda primero.</div>'; return; }
+  cont.innerHTML = CREADORES.map((m, i) => {
+    const dests = Object.keys(m.dests).map(d => destIcon(d)).join(' ');
+    return `<div class="crow" onclick="verCreador(${i})">
+      <span class="cnum">#${i + 1}</span>
+      <span class="cname">${esc(m.name)}</span>
+      <span class="cbig">${m.count}</span><span class="ctag">anuncios</span>
+      <span class="ctag">🎥 ${m.videos}</span>
+      <span class="ctag">⏱️ máx ${esc(m.durLabel)}</span>
+      <span class="ctag">${dests}</span>
+      <span class="cgo">ver →</span>
+    </div>`;
+  }).join('');
+}
+function verCreador(i) {
+  const m = CREADORES[i]; if (!m) return;
+  ADV_FILTER = m.name; RENDER_LIMIT = 60;
+  showView('buscar'); render();
+}
+function quitarCreador() { ADV_FILTER = null; RENDER_LIMIT = 60; render(); }
 
 // ---------- filtros por tiempo activo ----------
 function bucketCounts() { const c = {}; ADS.forEach(a => { c[a.bucket] = (c[a.bucket] || 0) + 1; }); return c; }
@@ -185,7 +227,11 @@ function renderFilters() {
 }
 function toggleBucket(k) { SELECTED_BUCKETS.has(k) ? SELECTED_BUCKETS.delete(k) : SELECTED_BUCKETS.add(k); RENDER_LIMIT = 60; renderFilters(); render(); }
 function clearBuckets() { SELECTED_BUCKETS.clear(); RENDER_LIMIT = 60; renderFilters(); render(); }
-function visibleAds() { return SELECTED_BUCKETS.size ? ADS.filter(a => SELECTED_BUCKETS.has(a.bucket)) : ADS; }
+function visibleAds() {
+  let list = SELECTED_BUCKETS.size ? ADS.filter(a => SELECTED_BUCKETS.has(a.bucket)) : ADS;
+  if (ADV_FILTER) list = list.filter(a => (a.advertiser || '(sin nombre)') === ADV_FILTER);
+  return list;
+}
 function applySort(list) {
   const a = [...list];
   if (SORT === 'meta') a.sort((x, y) => (x.meta_rank ?? 1e9) - (y.meta_rank ?? 1e9));
@@ -226,7 +272,7 @@ async function buscar() {
     const d = await r.json();
     if (!d.ok) throw new Error(d.error || 'error');
     ADS = d.ads || [];
-    RENDER_LIMIT = 60;
+    RENDER_LIMIT = 60; ADV_FILTER = null;
     renderFilters(); render();
     const cv = ADS.filter(a => a.has_video).length;
     let tb = '';
@@ -245,8 +291,9 @@ function render() {
   grid.innerHTML = '';
   const vis = applySort(visibleAds());
   vis.slice(0, RENDER_LIMIT).forEach(ad => { try { grid.appendChild(card(ad, 'b')); } catch (e) { console.error('card', e); } });
-  document.getElementById('visinfo').textContent = ADS.length
-    ? `Mostrando ${Math.min(RENDER_LIMIT, vis.length)} de ${vis.length} (pool guardado: ${ADS.length})` : '';
+  let info = ADS.length ? `Mostrando ${Math.min(RENDER_LIMIT, vis.length)} de ${vis.length} (pool: ${ADS.length})` : '';
+  if (ADV_FILTER) info += ` · 🏅 Creador: <b>${esc(ADV_FILTER)}</b> <a href="#" onclick="quitarCreador();return false;">✕ quitar</a>`;
+  document.getElementById('visinfo').innerHTML = info;
   if (vis.length > RENDER_LIMIT) {
     const more = document.createElement('button');
     more.className = 'green';

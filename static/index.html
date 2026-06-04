@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ad-Spy — Espía de Anuncios</title>
-  <link rel="stylesheet" href="/static/styles.css?v=8" />
+  <link rel="stylesheet" href="/static/styles.css?v=9" />
 </head>
 <body>
   <header>
@@ -12,6 +12,7 @@
     <nav class="tabs">
       <button class="tab active" data-view="buscar" onclick="showView('buscar')">🔎 Buscar</button>
       <button class="tab" data-view="seleccionados" onclick="showView('seleccionados')">⭐ Seleccionados <span id="selCount" class="cbadge">0</span></button>
+      <button class="tab" data-view="creadores" onclick="showView('creadores')">🏅 Creadores</button>
     </nav>
     <span class="spacer"></span>
     <div class="nichebox">
@@ -82,6 +83,15 @@
       <div class="status" id="selStatus"></div>
       <div class="grid" id="selGrid"></div>
     </section>
+
+    <!-- ===== VISTA CREADORES ===== -->
+    <section id="view-creadores" style="display:none">
+      <div class="toolbar">
+        <h2 style="margin:0;font-size:18px">🏅 Creadores que escalan — <span id="creadoresInfo" class="tag"></span></h2>
+      </div>
+      <div class="status" id="creadoresStatus">Los creadores con <b>más anuncios activos</b> (y más tiempo corriendo) suelen ser los que están <b>escalando</b>. Clic en uno para ver sus anuncios.</div>
+      <div id="creadoresList"></div>
+    </section>
   </div>
 
   <!-- Modal Cómo usar -->
@@ -100,6 +110,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=12"></script>
+  <script src="/static/app.js?v=13"></script>
 </body>
 </html>
