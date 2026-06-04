@@ -129,9 +129,9 @@ pero respeta los Términos de Servicio de Meta/Apify y **no copies anuncios tal 
 
 ## 👤 Autor
 
-Creado por **[tu nombre]** para su comunidad y alumnos de IA.
-- 🎥 YouTube: [tu canal]
-- 👥 Comunidad: [tu comunidad]
+Creado por **Diego Osorio Castaño** para su comunidad y alumnos de IA.
+- 🎥 YouTube: [Soydiegoosorio](https://www.youtube.com/@Soydiegoosorio)
+- 👥 Comunidad: **Imperio**
 
 *Construido con [Claude Code](https://claude.com/claude-code). Ver `CLAUDE.md` para
 la arquitectura y las lecciones técnicas del proyecto.*
