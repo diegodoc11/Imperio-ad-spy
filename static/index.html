@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ad-Spy — Espía de Anuncios</title>
+  <link rel="stylesheet" href="/static/styles.css?v=8" />
+</head>
+<body>
+  <header>
+    <div class="brand">🕵️ Ad-Spy</div>
+    <nav class="tabs">
+      <button class="tab active" data-view="buscar" onclick="showView('buscar')">🔎 Buscar</button>
+      <button class="tab" data-view="seleccionados" onclick="showView('seleccionados')">⭐ Seleccionados <span id="selCount" class="cbadge">0</span></button>
+    </nav>
+    <span class="spacer"></span>
+    <div class="nichebox">
+      <span class="tag">Nicho:</span>
+      <select id="niche" onchange="onNicheChange()"></select>
+      <button class="ghost mini" title="Nuevo nicho" onclick="nuevoNicho()">＋</button>
+    </div>
+    <div class="apify-pill" id="apifyPill" title="Uso de Apify este mes">Apify …</div>
+    <span class="tag" id="health">…</span>
+    <button class="ghost mini" title="Cómo usar" onclick="openHelp()">ℹ️</button>
+  </header>
+
+  <div class="wrap">
+    <!-- ===== VISTA BUSCAR ===== -->
+    <section id="view-buscar">
+      <div class="searchbar">
+        <input type="text" id="q" placeholder="Una o VARIAS palabras separadas por coma: claude, automatizar con ia, anuncios con ia" oninput="updateCost()" onkeydown="if(event.key==='Enter')buscar()" />
+        <label class="chk">🌍 País:
+          <select id="country" title="País donde se muestran los anuncios">
+            <option value="ALL" selected>Todos los países</option>
+            <option value="CO">Colombia</option>
+            <option value="MX">México</option>
+            <option value="AR">Argentina</option>
+            <option value="CL">Chile</option>
+            <option value="PE">Perú</option>
+            <option value="EC">Ecuador</option>
+            <option value="ES">España</option>
+            <option value="US">Estados Unidos</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="active" checked /> Solo activos</label>
+        <button onclick="buscar()" id="btnBuscar">🔎 Buscar</button>
+      </div>
+
+      <div class="countbar">
+        <span class="tag">Cantidad a scrapear:</span>
+        <button class="cnt" data-n="20" onclick="setCount(20)">20</button>
+        <button class="cnt active" data-n="50" onclick="setCount(50)">50</button>
+        <button class="cnt" data-n="100" onclick="setCount(100)">100</button>
+        <button class="cnt" data-n="200" onclick="setCount(200)">200</button>
+        <span class="cost" id="costEst"></span>
+        <span class="spacer"></span>
+        <label class="tag">↕️ Ordenar:
+          <select id="sort" onchange="setSort(this.value)">
+            <option value="meta">≈ Impresiones (orden de Meta)</option>
+            <option value="oldest">Más tiempo activo</option>
+            <option value="newest">Más reciente primero</option>
+            <option value="advertiser">Anunciante (A–Z)</option>
+            <option value="video">Con video primero</option>
+          </select>
+        </label>
+        <button class="ghost mini" onclick="vaciarResultados()" title="Vaciar los resultados scrapeados de este nicho">🗑 Vaciar</button>
+      </div>
+
+      <div class="filters" id="filters"></div>
+      <div id="visinfo" class="tag" style="margin:4px 2px 0"></div>
+      <div class="status" id="status">Escribe una palabra y pulsa <b>Buscar</b>.</div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <!-- ===== VISTA SELECCIONADOS ===== -->
+    <section id="view-seleccionados" style="display:none">
+      <div class="toolbar">
+        <h2 style="margin:0;font-size:18px">⭐ Seleccionados — <span id="selNiche"></span></h2>
+        <span class="spacer"></span>
+        <button class="green" onclick="transcribirTodosSel()">📝 Transcribir todos</button>
+      </div>
+      <div class="status" id="selStatus"></div>
+      <div class="grid" id="selGrid"></div>
+    </section>
+  </div>
+
+  <!-- Modal Cómo usar -->
+  <div class="modal-bg" id="help">
+    <div class="modal">
+      <button class="ghost close" onclick="closeHelp()">✕ Cerrar</button>
+      <h2>ℹ️ Cómo usar Ad-Spy</h2>
+      <ol>
+        <li>Elige tu <b>Nicho</b> arriba (o crea uno con ＋). Todo lo que guardes queda separado por nicho.</li>
+        <li>En <b>🔎 Buscar</b>: escribe una palabra, elige cuántos anuncios (mira el <b>costo estimado</b>) y pulsa Buscar.</li>
+        <li>Filtra por <b>⏱️ tiempo activo</b> y reproduce los videos con <b>▶ Ver</b>.</li>
+        <li>Guarda los buenos con <b>☆ Guardar</b> → van a la pestaña <b>⭐ Seleccionados</b>.</li>
+        <li>En <b>⭐ Seleccionados</b>: <b>📝 Transcribe</b> (local y gratis) y luego pásame el texto para adaptar el copy a tu negocio.</li>
+      </ol>
+      <p class="tag">El indicador <b>Apify</b> arriba muestra tu gasto del mes, % y días para renovar. Uso solo para investigación.</p>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=12"></script>
+</body>
+</html>

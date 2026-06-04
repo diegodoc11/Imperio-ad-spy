@@ -1,0 +1,20 @@
+# ⚠️ Secretos y entorno — NUNCA subir
+.env
+.venv/
+
+# Datos del usuario (no compartir)
+data/
+downloads/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporales de desarrollo
+_*.py
+_*.json
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
