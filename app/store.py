@@ -105,3 +105,37 @@ class Store:
             d = self._read()
             d.setdefault("scraped_at", {}).setdefault(niche, {})[term] = iso
             self._write(d)
+
+    # ----- eliminar anuncios del pool (limpieza de irrelevantes) -----
+    def remove_result(self, niche: str, library_id: str) -> int:
+        with _LOCK:
+            d = self._read()
+            r = d.get("results", {}).get(niche)
+            if not r:
+                return 0
+            before = len(r.get("ads", []))
+            r["ads"] = [x for x in r.get("ads", []) if str(x.get("library_id")) != str(library_id)]
+            self._write(d)
+            return before - len(r["ads"])
+
+    def remove_results_by_advertiser(self, niche: str, advertiser: str) -> int:
+        with _LOCK:
+            d = self._read()
+            r = d.get("results", {}).get(niche)
+            if not r:
+                return 0
+            before = len(r.get("ads", []))
+            r["ads"] = [x for x in r.get("ads", []) if (x.get("advertiser") or "(sin nombre)") != advertiser]
+            self._write(d)
+            return before - len(r["ads"])
+
+    def all_shortlisted_ids(self) -> set:
+        """IDs de todos los anuncios guardados (cualquier nicho) — sus videos NO se borran."""
+        d = self._read()
+        ids = set()
+        for ads in d.get("shortlist", {}).values():
+            for a in ads:
+                lid = a.get("library_id")
+                if lid:
+                    ids.add(str(lid))
+        return ids

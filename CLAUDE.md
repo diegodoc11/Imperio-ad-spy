@@ -201,3 +201,30 @@ uv pip install -r requirements.txt        # o: uv pip install fastapi "uvicorn[s
 - "Modo refresco" con cantidad baja por término.
 - Integrar el paso de copy con la API de Anthropic (opcional).
 - Whisper local con GPU para transcripción más rápida.
+
+## 10. Actualización — Creadores, limpieza y borrado
+
+**Funciones añadidas:**
+- **Pestaña 🏅 Creadores:** agrupa el pool por anunciante y rankea por nº de anuncios + tiempo activo (detecta quién escala). Clic en un creador → filtra a sus anuncios (`ADV_FILTER` en el front).
+- **POOL_MAX (.env, def. 3000):** el pool acumula **por nicho** (no global), hasta POOL_MAX. Antes había un tope fijo de 500 que borraba lo viejo en silencio.
+- **Badges en tarjeta:** `📢 N de este anunciante` (clic = filtra) y `📑 N copias` (`collation_count`).
+- **Borrado/limpieza del pool:** 🗑 por anuncio y 🗑 por anunciante, para quitar irrelevantes (ej. otro idioma).
+- **Deep dive por creador:** scrapea TODA la biblioteca activa de una página por su `page_id` (`view_all_page_id`). Cuesta Apify.
+- **Auto-limpieza de videos:** hilo daemon que cada 6h borra los `.mp4` de `downloads/` no vistos en `VIDEO_TTL_HOURS` (def. 72h) **EXCEPTO** los que estén en algún Seleccionados. `/api/video` hace `os.utime` al servir → cada vez que ves un video se reinicia su reloj de 72h.
+
+**Endpoints nuevos:** `/api/results/remove`, `/api/results/remove-advertiser`, `/api/page-ads`.
+
+**Datos nuevos en `normalize()`:** `page_id`, `collation_count`.
+⚠️ **Aprendizaje:** los anuncios scrapeados ANTES de añadir estos campos NO los tienen → los badges de "copias" y el botón "🕵️ Biblioteca" solo aparecen en scrapeos NUEVOS. (Regla general: al añadir un campo a normalize, los datos viejos del pool no lo tendrán hasta re-scrapear.)
+
+**Aprendizaje (front):** para `onclick` con nombres de anunciante (que pueden traer comillas/espacios), pasar el valor con `encodeURIComponent(...)` y recibir con `decodeURIComponent(...)` — evita romper el HTML inline. Para handlers dentro de filas clicables, usar `event.stopPropagation()`.
+
+**store.json — estructura completa actual:**
+```jsonc
+{
+  "niches": [...],
+  "shortlist":  { "<nicho>": [ad,...] },
+  "results":    { "<nicho>": { "ads": [ad,...], "query": "..." } },
+  "scraped_at": { "<nicho>": { "<término>": "ISO" } }
+}
+```

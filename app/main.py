@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import os
 import pathlib
+import threading
+import time
 from datetime import datetime, timezone
 
 import requests
@@ -46,6 +48,33 @@ STORE = store_mod.Store(BASE / "data" / "store.json")
 COST_PER_RESULT = float(os.getenv("APIFY_COST_PER_RESULT", "0.00075"))
 COOLDOWN_DAYS = int(os.getenv("COOLDOWN_DAYS", "12"))
 POOL_MAX = int(os.getenv("POOL_MAX", "3000"))  # máx. anuncios acumulados por nicho
+VIDEO_TTL_HOURS = int(os.getenv("VIDEO_TTL_HOURS", "72"))
+
+
+def cleanup_old_videos():
+    """Borra los .mp4 no vistos en VIDEO_TTL_HOURS, salvo los que estén en Seleccionados."""
+    try:
+        cutoff = time.time() - VIDEO_TTL_HOURS * 3600
+        saved = STORE.all_shortlisted_ids()
+        for f in DOWNLOADS.glob("*.mp4"):
+            if f.stem in saved:
+                continue
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _cleanup_loop():
+    while True:
+        cleanup_old_videos()
+        time.sleep(6 * 3600)
+
+
+threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 
 def _safe_id(s: str) -> str:
@@ -196,12 +225,41 @@ def clear_results(payload: dict = Body(...)):
     return {"ok": True}
 
 
+@app.post("/api/results/remove")
+def remove_result(payload: dict = Body(...)):
+    n = STORE.remove_result(payload.get("niche"), payload.get("library_id"))
+    return {"ok": True, "removed": n}
+
+
+@app.post("/api/results/remove-advertiser")
+def remove_results_advertiser(payload: dict = Body(...)):
+    n = STORE.remove_results_by_advertiser(payload.get("niche"), payload.get("advertiser"))
+    return {"ok": True, "removed": n}
+
+
+@app.get("/api/page-ads")
+def page_ads(page_id: str, niche: str = "", count: int = 50):
+    """Scrapea toda la biblioteca activa de un creador (por page_id) y la mezcla al pool."""
+    if not page_id:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "falta page_id"})
+    try:
+        ads = search_mod.search_page_ads(page_id, count=count)
+        pool = STORE.merge_results(niche, ads, max_items=POOL_MAX) if niche else ads
+        now = datetime.now()
+        for a in pool:
+            search_mod.add_duration(a, now)
+        return {"ok": True, "new_count": len(ads), "count": len(pool), "ads": pool}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
+
+
 @app.get("/api/video")
 def api_video(url: str, id: str = "ad"):
     """Descarga (y cachea) el video y lo sirve para reproducir en la app."""
     dest = DOWNLOADS / f"{_safe_id(id)}.mp4"
     try:
         tx.download_video(url, dest)
+        os.utime(dest, None)  # marca "visto ahora" → reinicia el reloj de auto-limpieza
     except Exception as e:
         return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
     return FileResponse(str(dest), media_type="video/mp4")

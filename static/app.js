@@ -9,6 +9,7 @@ let SORT = 'meta';
 let RENDER_LIMIT = 60; // cuántas tarjetas mostrar de golpe (paginado)
 let ADV_FILTER = null;  // filtrar por anunciante (desde la pestaña Creadores)
 let CREADORES = [];     // ranking de creadores del nicho actual
+let ADV_COUNTS = {};    // nº de anuncios por anunciante en el pool
 
 const BUCKETS = [
   { k: 'siempre', l: 'Desde siempre (+2 años)' },
@@ -123,6 +124,7 @@ async function loadResults() {
     if (d.query) document.getElementById('q').value = d.query;
   } catch (e) { ADS = []; }
   RENDER_LIMIT = 60; ADV_FILTER = null;
+  computeAdvCounts();
   renderFilters(); render();
   if (ADS.length) setStatus(`📦 ${ADS.length} anuncios scrapeados (guardados) en “${esc(NICHE)}”. Filtra/ordena ⤴`);
 }
@@ -182,9 +184,10 @@ function renderCreadores() {
   const map = {};
   ADS.forEach(a => {
     const k = a.advertiser || '(sin nombre)';
-    if (!map[k]) map[k] = { name: k, count: 0, videos: 0, maxDays: -1, durLabel: '?', dests: {} };
+    if (!map[k]) map[k] = { name: k, page_id: a.page_id || null, count: 0, videos: 0, maxDays: -1, durLabel: '?', dests: {} };
     const m = map[k];
     m.count++;
+    if (!m.page_id && a.page_id) m.page_id = a.page_id;
     if (a.has_video) m.videos++;
     if ((a.days_active ?? -1) > m.maxDays) { m.maxDays = a.days_active ?? -1; m.durLabel = a.duration_label || '?'; }
     if (a.dest_type && a.dest_type !== 'ninguno') m.dests[a.dest_type] = (m.dests[a.dest_type] || 0) + 1;
@@ -194,6 +197,7 @@ function renderCreadores() {
   if (!ADS.length) { cont.innerHTML = '<div class="status">No hay anuncios en este nicho todavía. Haz una búsqueda primero.</div>'; return; }
   cont.innerHTML = CREADORES.map((m, i) => {
     const dests = Object.keys(m.dests).map(d => destIcon(d)).join(' ');
+    const nameEnc = encodeURIComponent(m.name);
     return `<div class="crow" onclick="verCreador(${i})">
       <span class="cnum">#${i + 1}</span>
       <span class="cname">${esc(m.name)}</span>
@@ -201,6 +205,8 @@ function renderCreadores() {
       <span class="ctag">🎥 ${m.videos}</span>
       <span class="ctag">⏱️ máx ${esc(m.durLabel)}</span>
       <span class="ctag">${dests}</span>
+      ${m.page_id ? `<button class="ghost mini" onclick="event.stopPropagation(); verTodaBibliotecaPage('${m.page_id}', decodeURIComponent('${nameEnc}'))" title="Ver toda su biblioteca (Apify)">🕵️</button>` : ''}
+      <button class="ghost del mini" onclick="event.stopPropagation(); eliminarAnunciante(decodeURIComponent('${nameEnc}'))" title="Eliminar todos sus anuncios">🗑</button>
       <span class="cgo">ver →</span>
     </div>`;
   }).join('');
@@ -212,8 +218,46 @@ function verCreador(i) {
 }
 function quitarCreador() { ADV_FILTER = null; RENDER_LIMIT = 60; render(); }
 
+// ---------- filtrar / eliminar / biblioteca por anunciante ----------
+function filtrarPorAnunciante(id) {
+  const a = findAd(id); if (!a) return;
+  ADV_FILTER = a.advertiser || '(sin nombre)'; RENDER_LIMIT = 60;
+  showView('buscar'); render();
+}
+async function eliminarAnuncio(p, id) {
+  await fetch('/api/results/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ niche: NICHE, library_id: id }) });
+  ADS = ADS.filter(a => String(a.library_id) !== String(id));
+  computeAdvCounts(); renderFilters(); render();
+}
+async function eliminarAnunciante(name) {
+  if (!confirm(`¿Eliminar TODOS los anuncios de "${name}" en el nicho "${NICHE}"?\n(Puedes volver a scrapearlos luego)`)) return;
+  await fetch('/api/results/remove-advertiser', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ niche: NICHE, advertiser: name }) });
+  ADS = ADS.filter(a => (a.advertiser || '(sin nombre)') !== name);
+  if (ADV_FILTER === name) ADV_FILTER = null;
+  computeAdvCounts(); renderFilters(); render();
+  setStatus(`🗑 Eliminados los anuncios de "${esc(name)}".`);
+}
+async function verTodaBibliotecaPage(pageId, name) {
+  if (!confirm(`Esto scrapea TODA la biblioteca activa de "${name}" y cuesta créditos de Apify. ¿Continuar?`)) return;
+  setStatus(`<span class="spin"></span> Trayendo toda la biblioteca de "${esc(name)}"… (1–2 min)`);
+  try {
+    const d = await (await fetch(`/api/page-ads?page_id=${encodeURIComponent(pageId)}&niche=${encodeURIComponent(NICHE)}&count=${COUNT}`)).json();
+    if (!d.ok) throw new Error(d.error || 'error');
+    ADS = d.ads || []; computeAdvCounts();
+    ADV_FILTER = name; RENDER_LIMIT = 60;
+    showView('buscar'); renderFilters(); render();
+    setStatus(`Biblioteca de "${esc(name)}": ${d.new_count} traídos · pool ${d.count}.`);
+    loadApifyPill();
+  } catch (e) { setStatus(`❌ ${esc(e.message)}`); }
+}
+function verTodaBiblioteca(id) {
+  const a = findAd(id); if (!a || !a.page_id) return;
+  verTodaBibliotecaPage(a.page_id, a.advertiser || '(sin nombre)');
+}
+
 // ---------- filtros por tiempo activo ----------
 function bucketCounts() { const c = {}; ADS.forEach(a => { c[a.bucket] = (c[a.bucket] || 0) + 1; }); return c; }
+function computeAdvCounts() { ADV_COUNTS = {}; ADS.forEach(a => { const k = a.advertiser || '(sin nombre)'; ADV_COUNTS[k] = (ADV_COUNTS[k] || 0) + 1; }); }
 function renderFilters() {
   const counts = bucketCounts();
   const none = SELECTED_BUCKETS.size === 0;
@@ -273,6 +317,7 @@ async function buscar() {
     if (!d.ok) throw new Error(d.error || 'error');
     ADS = d.ads || [];
     RENDER_LIMIT = 60; ADV_FILTER = null;
+    computeAdvCounts();
     renderFilters(); render();
     const cv = ADS.filter(a => a.has_video).length;
     let tb = '';
@@ -292,7 +337,7 @@ function render() {
   const vis = applySort(visibleAds());
   vis.slice(0, RENDER_LIMIT).forEach(ad => { try { grid.appendChild(card(ad, 'b')); } catch (e) { console.error('card', e); } });
   let info = ADS.length ? `Mostrando ${Math.min(RENDER_LIMIT, vis.length)} de ${vis.length} (pool: ${ADS.length})` : '';
-  if (ADV_FILTER) info += ` · 🏅 Creador: <b>${esc(ADV_FILTER)}</b> <a href="#" onclick="quitarCreador();return false;">✕ quitar</a>`;
+  if (ADV_FILTER) info += ` · 🏅 <b>${esc(ADV_FILTER)}</b> <a href="#" onclick="quitarCreador();return false;">✕ quitar</a> · <a href="#" style="color:var(--danger)" onclick="eliminarAnunciante(decodeURIComponent('${encodeURIComponent(ADV_FILTER)}'));return false;">🗑 eliminar todos</a>`;
   document.getElementById('visinfo').innerHTML = info;
   if (vis.length > RENDER_LIMIT) {
     const more = document.createElement('button');
@@ -328,6 +373,9 @@ function card(ad, p) {
   const saveBtn = (p === 'b')
     ? `<button class="${saved ? 'green' : 'ghost'}" onclick="toggleGuardar('${id}')">${saved ? '★ Guardado' : '☆ Guardar'}</button>`
     : `<button class="ghost del" onclick="quitarSel('${id}')">🗑 Quitar</button>`;
+  const cnt = ADV_COUNTS[ad.advertiser || '(sin nombre)'] || 1;
+  const advBadge = cnt > 1 ? `<span class="advbadge" onclick="filtrarPorAnunciante('${id}')">📢 ${cnt} de este anunciante</span>` : '';
+  const copyBadge = (ad.collation_count > 1) ? `<span class="copybadge" title="variaciones del mismo anuncio">📑 ${ad.collation_count} copias</span>` : '';
   const thumb = ad.thumbnail_url ? `/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}` : '';
   const media =
     `<div class="ph">${ad.has_video ? '🎥' : '📄'}</div>` +
@@ -342,6 +390,7 @@ function card(ad, p) {
       ${dur}
     </div>
     <div class="sub">📅 Publicado el ${fmtDate(ad.start_date)}</div>
+    ${(advBadge || copyBadge) ? `<div class="cardbadges">${advBadge}${copyBadge}</div>` : ''}
     <div class="media" id="${p}m-${id}">${media}</div>
     ${dest}
     <div class="copy" id="${p}c-${id}">${esc(ad.copy || '(sin texto)')}${longcopy ? ` <span class="more" onclick="document.getElementById('${p}c-${id}').classList.toggle('expanded')">…ver más</span>` : ''}</div>
@@ -350,6 +399,8 @@ function card(ad, p) {
       ${ad.has_video ? `<button class="ghost" onclick="verVideo('${p}','${id}')">▶ Ver</button>` : ''}
       ${ad.has_video ? `<button class="green" id="${p}btx-${id}" onclick="transcribirUno('${p}','${id}')">📝 Transcribir</button>` : ''}
       ${saveBtn}
+      ${(p === 'b' && ad.page_id) ? `<button class="ghost" onclick="verTodaBiblioteca('${id}')" title="Ver toda la biblioteca de este creador (usa Apify)">🕵️ Biblioteca</button>` : ''}
+      ${p === 'b' ? `<button class="ghost del" onclick="eliminarAnuncio('${p}','${id}')" title="Eliminar del pool">🗑</button>` : ''}
       ${ad.ad_url ? `<a href="${esc(ad.ad_url)}" target="_blank">FB ↗</a>` : ''}
     </div>
     <div class="transcript" id="${p}tx-${id}" style="display:none"></div>`;

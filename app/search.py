@@ -121,6 +121,8 @@ def normalize(item: dict) -> dict:
     lib_id = _dig(item, "ad_archive_id", "adArchiveID", "ad_archive_ID", "adId", "id", "library_id")
 
     dest = _destination(snap, item)
+    page_id = _dig(item, "page_id", "pageID", "snapshot.page_id")
+    collation = _dig(item, "collation_count", "ads_count") or 1
 
     return {
         "library_id": str(lib_id) if lib_id else None,
@@ -131,6 +133,8 @@ def normalize(item: dict) -> dict:
         "thumbnail_url": thumb,
         "ad_url": f"https://www.facebook.com/ads/library/?id={lib_id}" if lib_id else None,
         "has_video": bool(video),
+        "page_id": str(page_id) if page_id else None,
+        "collation_count": collation,
         "cta_text": dest["cta_text"],
         "dest_type": dest["dest_type"],
         "dest_label": dest["dest_label"],
@@ -255,3 +259,38 @@ def search_ads(query: str, count: int = 30, country: str = "ALL",
     # Por defecto: más tiempo activos primero (los "ganadores" evergreen)
     ads.sort(key=lambda a: (a.get("days_active") is None, -(a.get("days_active") or 0)))
     return ads
+
+
+def build_page_url(page_id: str, active: bool = True) -> str:
+    status = "active" if active else "all"
+    return ("https://www.facebook.com/ads/library/?"
+            f"active_status={status}&ad_type=all&country=ALL&is_targeted_country=false"
+            f"&media_type=all&search_type=page&view_all_page_id={page_id}")
+
+
+def search_page_ads(page_id: str, count: int = 50, active: bool = True, token: str | None = None) -> list[dict]:
+    """Scrapea TODOS los anuncios activos de una página/creador por su page_id."""
+    from apify_client import ApifyClient
+
+    token = token or os.getenv("APIFY_TOKEN") or os.getenv("APIFY_API_TOKEN")
+    if not token:
+        raise RuntimeError("Falta el token de Apify (.env).")
+    client = ApifyClient(token)
+    actor = os.getenv("APIFY_ACTOR", DEFAULT_ACTOR)
+    run_input = {
+        "urls": [{"url": build_page_url(page_id, active), "method": "GET"}],
+        "count": max(10, int(count)),
+        "scrapeAdDetails": True,
+        "activeStatus": "active" if active else "all",
+    }
+    run = client.actor(actor).call(run_input=run_input)
+    if run is None or not getattr(run, "default_dataset_id", None):
+        raise RuntimeError("El actor de Apify no devolvió resultados.")
+    items = client.dataset(run.default_dataset_id).list_items().items
+    now = datetime.now()
+    ads = []
+    for i, it in enumerate(items):
+        a = add_duration(normalize(it), now)
+        a["meta_rank"] = i
+        ads.append(a)
+    return [a for a in ads if a.get("library_id")]
