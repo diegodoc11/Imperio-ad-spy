@@ -45,6 +45,7 @@ app.mount("/downloads", StaticFiles(directory=str(DOWNLOADS)), name="downloads")
 STORE = store_mod.Store(BASE / "data" / "store.json")
 COST_PER_RESULT = float(os.getenv("APIFY_COST_PER_RESULT", "0.00075"))
 COOLDOWN_DAYS = int(os.getenv("COOLDOWN_DAYS", "12"))
+POOL_MAX = int(os.getenv("POOL_MAX", "3000"))  # máx. anuncios acumulados por nicho
 
 
 def _safe_id(s: str) -> str:
@@ -169,7 +170,7 @@ def api_search(q: str = Query(...), count: int = 30, country: str = "ALL",
                 if lid and lid not in seen:
                     seen.add(lid)
                     all_ads.append(a)
-        pool = STORE.merge_results(niche, all_ads, q) if niche else all_ads
+        pool = STORE.merge_results(niche, all_ads, q, max_items=POOL_MAX) if niche else all_ads
         now = datetime.now()
         for a in pool:
             search_mod.add_duration(a, now)

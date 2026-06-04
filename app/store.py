@@ -71,8 +71,9 @@ class Store:
     def results_query(self, niche: str) -> str:
         return self._read().get("results", {}).get(niche, {}).get("query", "")
 
-    def merge_results(self, niche: str, ads: list, query: str = "") -> list:
-        """Mezcla anuncios nuevos con el pool del nicho (nuevos primero, sin duplicar)."""
+    def merge_results(self, niche: str, ads: list, query: str = "", max_items: int = 3000) -> list:
+        """Mezcla anuncios nuevos con el pool del nicho (nuevos primero, sin duplicar).
+        Acumula hasta max_items (para complementar búsquedas sin perder lo anterior)."""
         with _LOCK:
             d = self._read()
             r = d.setdefault("results", {}).setdefault(niche, {"ads": [], "query": ""})
@@ -81,7 +82,7 @@ class Store:
                 lid = str(a.get("library_id"))
                 if lid and lid not in by_id:
                     by_id[lid] = a
-            r["ads"] = list(by_id.values())[:500]
+            r["ads"] = list(by_id.values())[:max_items]
             if query:
                 r["query"] = query
             self._write(d)
