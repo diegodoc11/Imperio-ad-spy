@@ -225,6 +225,7 @@ function filtrarPorAnunciante(id) {
   showView('buscar'); render();
 }
 async function eliminarAnuncio(p, id) {
+  if (!confirm('🗑 ¿Seguro que quieres eliminar este anuncio del pool?\n(No afecta tus ⭐ Seleccionados; puedes volver a scrapearlo luego)')) return;
   await fetch('/api/results/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ niche: NICHE, library_id: id }) });
   ADS = ADS.filter(a => String(a.library_id) !== String(id));
   computeAdvCounts(); renderFilters(); render();
@@ -376,6 +377,7 @@ function card(ad, p) {
   const cnt = ADV_COUNTS[ad.advertiser || '(sin nombre)'] || 1;
   const advBadge = cnt > 1 ? `<span class="advbadge" onclick="filtrarPorAnunciante('${id}')">📢 ${cnt} de este anunciante</span>` : '';
   const copyBadge = (ad.collation_count > 1) ? `<span class="copybadge" title="variaciones del mismo anuncio">📑 ${ad.collation_count} copias</span>` : '';
+  const delBtn = (p === 'b') ? `<button class="delcard" onclick="eliminarAnuncio('${p}','${id}')" title="Eliminar este anuncio del pool">🗑</button>` : '';
   const thumb = ad.thumbnail_url ? `/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}` : '';
   const media =
     `<div class="ph">${ad.has_video ? '🎥' : '📄'}</div>` +
@@ -385,6 +387,7 @@ function card(ad, p) {
     ? `<div class="dest dest-${ad.dest_type}">${destIcon(ad.dest_type)} ${esc(ad.cta_text || ad.dest_label)}${(ad.dest_type === 'web' && ad.dest_domain) ? ` · ${esc(ad.dest_domain)}` : ''}</div>`
     : '';
   el.innerHTML = `
+    ${delBtn}
     <div class="head">
       <span class="name">${esc(ad.advertiser || 'Anunciante')}</span>
       ${dur}
@@ -400,7 +403,6 @@ function card(ad, p) {
       ${ad.has_video ? `<button class="green" id="${p}btx-${id}" onclick="transcribirUno('${p}','${id}')">📝 Transcribir</button>` : ''}
       ${saveBtn}
       ${(p === 'b' && ad.page_id) ? `<button class="ghost" onclick="verTodaBiblioteca('${id}')" title="Ver toda la biblioteca de este creador (usa Apify)">🕵️ Biblioteca</button>` : ''}
-      ${p === 'b' ? `<button class="ghost del" onclick="eliminarAnuncio('${p}','${id}')" title="Eliminar del pool">🗑</button>` : ''}
       ${ad.ad_url ? `<a href="${esc(ad.ad_url)}" target="_blank">FB ↗</a>` : ''}
     </div>
     <div class="transcript" id="${p}tx-${id}" style="display:none"></div>`;

@@ -148,6 +148,11 @@ video:-webkit-full-screen { object-fit: contain !important; background: #000; }
 .advbadge { font-size: 11px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 20px; padding: 2px 9px; cursor: pointer; }
 .advbadge:hover { filter: brightness(1.12); }
 .copybadge { font-size: 11px; font-weight: 700; color: var(--muted); background: var(--panel2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; }
+/* botón eliminar: esquina inferior derecha, separado de los demás (evita clic accidental) */
+.card { position: relative; }
+.actions { padding-right: 54px; }
+.delcard { position: absolute; bottom: 10px; right: 10px; z-index: 4; width: 32px; height: 32px; border-radius: 50%; background: rgba(0,0,0,.5); border: 1px solid var(--danger); color: var(--danger); font-size: 15px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: .5; }
+.delcard:hover { opacity: 1; background: var(--danger); color: #fff; }
 /* ===== caja 4:5 robusta (imagen Y video idénticos) ===== */
 .media { display: block; position: relative; width: 100%; aspect-ratio: 4 / 5; height: auto; overflow: hidden; background: #000; }
 .media img, .media video { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; opacity: 1; }
