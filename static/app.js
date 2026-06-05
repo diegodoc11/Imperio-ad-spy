@@ -133,6 +133,7 @@ async function vaciarResultados() {
   await fetch('/api/results/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ niche: NICHE }) });
   ADS = []; renderFilters(); render(); setStatus('Resultados vaciados.');
 }
+function bajarTodas() { window.location = '/api/download-all?niche=' + encodeURIComponent(NICHE) + '&source=shortlist'; }
 async function toggleGuardar(id) {
   const ad = ADS.find(a => String(a.library_id) === String(id));
   if (!ad) return;
@@ -337,6 +338,7 @@ function render() {
   grid.innerHTML = '';
   const vis = applySort(visibleAds());
   vis.slice(0, RENDER_LIMIT).forEach(ad => { try { grid.appendChild(card(ad, 'b')); } catch (e) { console.error('card', e); } });
+  vis.slice(0, RENDER_LIMIT).forEach(ad => { if (ad.has_transcript) loadTranscript('b', ad.library_id); });
   let info = ADS.length ? `Mostrando ${Math.min(RENDER_LIMIT, vis.length)} de ${vis.length} (pool: ${ADS.length})` : '';
   if (ADV_FILTER) info += ` · 🏅 <b>${esc(ADV_FILTER)}</b> <a href="#" onclick="quitarCreador();return false;">✕ quitar</a> · <a href="#" style="color:var(--danger)" onclick="eliminarAnunciante(decodeURIComponent('${encodeURIComponent(ADV_FILTER)}'));return false;">🗑 eliminar todos</a>`;
   document.getElementById('visinfo').innerHTML = info;
@@ -357,7 +359,9 @@ function renderSel() {
   const st = document.getElementById('selStatus');
   if (!SHORTLIST.length) { st.innerHTML = `No hay seleccionados en <b>${esc(NICHE)}</b>. Guarda anuncios con ☆ desde Buscar.`; return; }
   st.textContent = '';
-  applySort(SHORTLIST).forEach(ad => { try { g.appendChild(card(ad, 's')); } catch (e) { console.error('card sel', e); } });
+  const _sel = applySort(SHORTLIST);
+  _sel.forEach(ad => { try { g.appendChild(card(ad, 's')); } catch (e) { console.error('card sel', e); } });
+  _sel.forEach(ad => { if (ad.has_transcript) loadTranscript('s', ad.library_id); });
 }
 
 // ---------- tarjeta (p = 'b' buscar | 's' seleccionados) ----------
@@ -403,6 +407,8 @@ function card(ad, p) {
       ${ad.has_video ? `<button class="green" id="${p}btx-${id}" onclick="transcribirUno('${p}','${id}')">📝 Transcribir</button>` : ''}
       ${saveBtn}
       ${(p === 'b' && ad.page_id) ? `<button class="ghost" onclick="verTodaBiblioteca('${id}')" title="Ver toda la biblioteca de este creador (usa Apify)">🕵️ Biblioteca</button>` : ''}
+      ${ad.has_transcript ? `<a class="ghost dl" href="/downloads/${id}.txt" download="guion_${id}.txt" title="Descargar el guion (arrástralo a Claude)">⬇ Guion</a>` : ''}
+      ${ad.thumbnail_url ? `<a class="ghost dl" href="/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}" download="img_${id}.jpg" title="Descargar la imagen">⬇ Imagen</a>` : ''}
       ${ad.ad_url ? `<a href="${esc(ad.ad_url)}" target="_blank">FB ↗</a>` : ''}
     </div>
     <div class="transcript" id="${p}tx-${id}" style="display:none"></div>`;
@@ -425,6 +431,7 @@ async function transcribirUno(p, id) {
   try {
     const d = await (await fetch('/api/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ library_id: id, video_url: ad.video_url }) })).json();
     if (!d.ok) throw new Error(d.error || 'error');
+    if (ad) { ad.has_transcript = true; ad._transcript = d.text || ''; }
     box.innerHTML = `
       <h4>📝 Transcripción · ${esc(d.language || '')} · ${d.duration || '?'}s</h4>
       <pre id="${p}pre-${id}">${esc(d.text || '(vacío)')}</pre>
@@ -451,6 +458,26 @@ async function transcribirTodosSel() {
   st.innerHTML = `✅ ${ids.length} transcripciones listas. Cópialas y pásamelas para adaptar el copy.`;
 }
 
+async function loadTranscript(p, id) {
+  const box = document.getElementById(`${p}tx-${id}`);
+  if (!box) return;
+  const ad = findAd(id);
+  let text = ad && ad._transcript;
+  if (text == null) {
+    try {
+      const r = await fetch(`/downloads/${id}.txt`);
+      if (!r.ok) return;
+      text = await r.text();
+      if (ad) ad._transcript = text;
+    } catch (e) { return; }
+  }
+  box.style.display = 'block';
+  box.innerHTML = `<h4>📝 Transcripción (ya hecha)</h4><pre id="${p}pre-${id}">${esc(text)}</pre>
+    <div class="row">
+      <button class="ghost" onclick="copiar('${p}pre-${id}')">📋 Copiar</button>
+      <a class="ghost dl" href="/downloads/${id}.txt" download="guion_${id}.txt">⬇ .txt</a>
+    </div>`;
+}
 function copiar(id) { navigator.clipboard.writeText(document.getElementById(id).textContent); }
 function openHelp() { document.getElementById('help').classList.add('show'); }
 function closeHelp() { document.getElementById('help').classList.remove('show'); }

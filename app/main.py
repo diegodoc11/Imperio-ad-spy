@@ -9,10 +9,12 @@ Endpoints:
 """
 from __future__ import annotations
 
+import io
 import os
 import pathlib
 import threading
 import time
+import zipfile
 from datetime import datetime, timezone
 
 import requests
@@ -81,6 +83,16 @@ def _safe_id(s: str) -> str:
     return "".join(c for c in (s or "ad") if c.isalnum() or c in "-_")[:40] or "ad"
 
 
+def _mark_extras(ads):
+    """Agrega tiempo activo y si ya existe la transcripción (.txt) de cada anuncio."""
+    now = datetime.now()
+    for a in ads:
+        search_mod.add_duration(a, now)
+        lid = _safe_id(str(a.get("library_id") or ""))
+        a["has_transcript"] = (DOWNLOADS / f"{lid}.txt").exists()
+    return ads
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (STATIC / "index.html").read_text(encoding="utf-8")
@@ -134,9 +146,7 @@ def add_niche(payload: dict = Body(...)):
 @app.get("/api/shortlist")
 def get_shortlist(niche: str):
     ads = STORE.shortlist(niche)
-    now = datetime.now()
-    for a in ads:
-        search_mod.add_duration(a, now)  # refresca el tiempo activo
+    _mark_extras(ads)
     return {"ads": ads}
 
 
@@ -200,9 +210,7 @@ def api_search(q: str = Query(...), count: int = 30, country: str = "ALL",
                     seen.add(lid)
                     all_ads.append(a)
         pool = STORE.merge_results(niche, all_ads, q, max_items=POOL_MAX) if niche else all_ads
-        now = datetime.now()
-        for a in pool:
-            search_mod.add_duration(a, now)
+        _mark_extras(pool)
         return {"ok": True, "new_count": len(all_ads), "count": len(pool),
                 "ads": pool, "terms": per_term}
     except Exception as e:
@@ -213,9 +221,7 @@ def api_search(q: str = Query(...), count: int = 30, country: str = "ALL",
 def get_results(niche: str):
     """Devuelve los anuncios ya scrapeados (guardados) de un nicho."""
     ads = STORE.results(niche)
-    now = datetime.now()
-    for a in ads:
-        search_mod.add_duration(a, now)
+    _mark_extras(ads)
     return {"ads": ads, "query": STORE.results_query(niche)}
 
 
@@ -237,6 +243,28 @@ def remove_results_advertiser(payload: dict = Body(...)):
     return {"ok": True, "removed": n}
 
 
+@app.get("/api/download-all")
+def download_all(niche: str, source: str = "pool"):
+    """ZIP con transcripciones (.txt). source=shortlist usa los Seleccionados."""
+    ads = STORE.shortlist(niche) if source == "shortlist" else STORE.results(niche)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for a in ads:
+            lid = _safe_id(str(a.get("library_id") or ""))
+            txt = DOWNLOADS / f"{lid}.txt"
+            if txt.exists():
+                adv = "".join(c for c in (a.get("advertiser") or "anuncio")
+                              if c.isalnum() or c in " -_").strip()[:40] or "anuncio"
+                try:
+                    z.writestr(f"{adv}_{lid}.txt", txt.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+    buf.seek(0)
+    fn = f"transcripciones_{_safe_id(niche)}.zip"
+    return Response(content=buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{fn}"'})
+
+
 @app.get("/api/page-ads")
 def page_ads(page_id: str, niche: str = "", count: int = 50):
     """Scrapea toda la biblioteca activa de un creador (por page_id) y la mezcla al pool."""
@@ -245,9 +273,7 @@ def page_ads(page_id: str, niche: str = "", count: int = 50):
     try:
         ads = search_mod.search_page_ads(page_id, count=count)
         pool = STORE.merge_results(niche, ads, max_items=POOL_MAX) if niche else ads
-        now = datetime.now()
-        for a in pool:
-            search_mod.add_duration(a, now)
+        _mark_extras(pool)
         return {"ok": True, "new_count": len(ads), "count": len(pool), "ads": pool}
     except Exception as e:
         return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
