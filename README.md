@@ -41,8 +41,8 @@ negocio. Ideal para marketers, agencias, creadores e infoproductores.
 
 ```bash
 # 1) Clona el repo
-git clone https://github.com/TU-USUARIO/ad-spy.git
-cd ad-spy
+git clone https://github.com/diegodoc11/Imperio-ad-spy.git
+cd Imperio-ad-spy
 
 # 2) Crea el entorno e instala dependencias
 uv venv
