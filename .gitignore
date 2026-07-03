@@ -11,9 +11,13 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Temporales de desarrollo
+# Temporales de desarrollo (scripts/datos sueltos que empiezan con _)
 _*.py
 _*.json
+# ...pero NO ignorar los __init__.py (marcadores de paquete, sí van a git)
+!**/__init__.py
+server.log
+server.err.log
 
 # Sistema operativo
 .DS_Store

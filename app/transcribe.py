@@ -29,8 +29,8 @@ def get_model():
     return _MODEL
 
 
-def download_video(url: str, dest: pathlib.Path) -> pathlib.Path:
-    """Descarga el video del anuncio a disco (si no existe ya)."""
+def download_file(url: str, dest: pathlib.Path) -> pathlib.Path:
+    """Descarga cualquier archivo binario (video o imagen) a disco, si no existe ya."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() and dest.stat().st_size > 0:
         return dest
@@ -42,6 +42,11 @@ def download_video(url: str, dest: pathlib.Path) -> pathlib.Path:
                 if chunk:
                     f.write(chunk)
     return dest
+
+
+def download_video(url: str, dest: pathlib.Path) -> pathlib.Path:
+    """Descarga el video del anuncio a disco (si no existe ya)."""
+    return download_file(url, dest)
 
 
 def transcribe_path(path, language: str | None = None) -> dict:

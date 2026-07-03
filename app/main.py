@@ -54,11 +54,11 @@ VIDEO_TTL_HOURS = int(os.getenv("VIDEO_TTL_HOURS", "72"))
 
 
 def cleanup_old_videos():
-    """Borra los .mp4 no vistos en VIDEO_TTL_HOURS, salvo los que estén en Seleccionados."""
+    """Borra media (.mp4/.jpg) no vista en VIDEO_TTL_HOURS, salvo la de Seleccionados."""
     try:
         cutoff = time.time() - VIDEO_TTL_HOURS * 3600
         saved = STORE.all_shortlisted_ids()
-        for f in DOWNLOADS.glob("*.mp4"):
+        for f in list(DOWNLOADS.glob("*.mp4")) + list(DOWNLOADS.glob("*.jpg")):
             if f.stem in saved:
                 continue
             try:
@@ -81,6 +81,30 @@ threading.Thread(target=_cleanup_loop, daemon=True).start()
 
 def _safe_id(s: str) -> str:
     return "".join(c for c in (s or "ad") if c.isalnum() or c in "-_")[:40] or "ad"
+
+
+def _cache_ad_media(ad: dict) -> dict:
+    """Descarga a disco el video y/o la imagen del anuncio, para que sobrevivan a la
+    caducidad de las URLs de la CDN de Facebook (que mueren en horas/días)."""
+    out = {"video": None, "image": None}
+    lid = _safe_id(str(ad.get("library_id") or ""))
+    if not lid or lid == "ad":
+        return out
+    vurl = ad.get("video_url")
+    if ad.get("has_video") and vurl:
+        try:
+            tx.download_video(vurl, DOWNLOADS / f"{lid}.mp4")
+            out["video"] = "ok"
+        except Exception as e:
+            out["video"] = f"err: {str(e)[:60]}"
+    iurl = ad.get("thumbnail_url")
+    if iurl:
+        try:
+            tx.download_file(iurl, DOWNLOADS / f"{lid}.jpg")
+            out["image"] = "ok"
+        except Exception as e:
+            out["image"] = f"err: {str(e)[:60]}"
+    return out
 
 
 def _mark_extras(ads):
@@ -157,6 +181,9 @@ def add_shortlist(payload: dict = Body(...)):
     if not niche or not ad.get("library_id"):
         return JSONResponse(status_code=400, content={"ok": False, "error": "faltan datos"})
     STORE.add_item(niche, ad)
+    # Blindar la media: al seleccionar, descarga video+imagen a disco en segundo plano
+    # (sin bloquear la respuesta) para que sobrevivan a la caducidad de las URLs de FB.
+    threading.Thread(target=_cache_ad_media, args=(ad,), daemon=True).start()
     return {"ok": True}
 
 
@@ -164,6 +191,25 @@ def add_shortlist(payload: dict = Body(...)):
 def remove_shortlist(payload: dict = Body(...)):
     STORE.remove_item(payload.get("niche"), payload.get("library_id"))
     return {"ok": True}
+
+
+@app.post("/api/shortlist/cache-media")
+def cache_shortlist_media():
+    """Descarga a disco el video/imagen de TODOS los seleccionados que aún tengan
+    enlace vivo (backfill). Bloquea hasta terminar; devuelve un reporte."""
+    ads = STORE.all_shortlisted_ads()
+    rep = {"total": len(ads), "video_ok": 0, "video_err": 0, "image_ok": 0, "image_err": 0}
+    for ad in ads:
+        r = _cache_ad_media(ad)
+        if r["video"] == "ok":
+            rep["video_ok"] += 1
+        elif r["video"]:
+            rep["video_err"] += 1
+        if r["image"] == "ok":
+            rep["image_ok"] += 1
+        elif r["image"]:
+            rep["image_err"] += 1
+    return {"ok": True, **rep}
 
 
 @app.get("/api/cooldown")
@@ -292,13 +338,21 @@ def api_video(url: str, id: str = "ad"):
 
 
 @app.get("/api/thumb")
-def api_thumb(url: str):
-    """Proxy de miniaturas (evita bloqueos de la CDN de FB en el navegador)."""
+def api_thumb(url: str, id: str = ""):
+    """Proxy de miniaturas. Si el anuncio tiene la imagen guardada en disco (por estar
+    en Seleccionados), la sirve desde ahí — así se ve aunque la URL de FB ya caducó.
+    Si no, la baja del lado del servidor (evita bloqueos de la CDN de FB en el navegador)."""
+    if id:
+        local = DOWNLOADS / f"{_safe_id(id)}.jpg"
+        if local.exists() and local.stat().st_size > 0:
+            return FileResponse(str(local), media_type="image/jpeg")
     try:
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-        return Response(content=r.content, media_type=r.headers.get("Content-Type", "image/jpeg"))
+        if r.status_code == 200:
+            return Response(content=r.content, media_type=r.headers.get("Content-Type", "image/jpeg"))
     except Exception:
-        return JSONResponse(status_code=404, content={"ok": False})
+        pass
+    return JSONResponse(status_code=404, content={"ok": False})
 
 
 @app.post("/api/transcribe")

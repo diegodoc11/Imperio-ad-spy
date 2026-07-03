@@ -382,7 +382,7 @@ function card(ad, p) {
   const advBadge = cnt > 1 ? `<span class="advbadge" onclick="filtrarPorAnunciante('${id}')">📢 ${cnt} de este anunciante</span>` : '';
   const copyBadge = (ad.collation_count > 1) ? `<span class="copybadge" title="variaciones del mismo anuncio">📑 ${ad.collation_count} copias</span>` : '';
   const delBtn = (p === 'b') ? `<button class="delcard" onclick="eliminarAnuncio('${p}','${id}')" title="Eliminar este anuncio del pool">🗑</button>` : '';
-  const thumb = ad.thumbnail_url ? `/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}` : '';
+  const thumb = ad.thumbnail_url ? `/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}&id=${encodeURIComponent(id)}` : '';
   const media =
     `<div class="ph">${ad.has_video ? '🎥' : '📄'}</div>` +
     (thumb ? `<img loading="lazy"${ad.has_video ? ' class="vthumb"' : ''} src="${thumb}" alt="" onerror="this.style.display='none'">` : '') +
@@ -408,7 +408,7 @@ function card(ad, p) {
       ${saveBtn}
       ${(p === 'b' && ad.page_id) ? `<button class="ghost" onclick="verTodaBiblioteca('${id}')" title="Ver toda la biblioteca de este creador (usa Apify)">🕵️ Biblioteca</button>` : ''}
       ${ad.has_transcript ? `<a class="ghost dl" href="/downloads/${id}.txt" download="guion_${id}.txt" title="Descargar el guion (arrástralo a Claude)">⬇ Guion</a>` : ''}
-      ${ad.thumbnail_url ? `<a class="ghost dl" href="/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}" download="img_${id}.jpg" title="Descargar la imagen">⬇ Imagen</a>` : ''}
+      ${ad.thumbnail_url ? `<a class="ghost dl" href="/api/thumb?url=${encodeURIComponent(ad.thumbnail_url)}&id=${encodeURIComponent(id)}" download="img_${id}.jpg" title="Descargar la imagen">⬇ Imagen</a>` : ''}
       ${ad.ad_url ? `<a href="${esc(ad.ad_url)}" target="_blank">FB ↗</a>` : ''}
     </div>
     <div class="transcript" id="${p}tx-${id}" style="display:none"></div>`;

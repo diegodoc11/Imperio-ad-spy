@@ -139,3 +139,11 @@ class Store:
                 if lid:
                     ids.add(str(lid))
         return ids
+
+    def all_shortlisted_ads(self) -> list:
+        """Todos los anuncios guardados (cualquier nicho) — para cachear su media a disco."""
+        d = self._read()
+        out = []
+        for ads in d.get("shortlist", {}).values():
+            out.extend(ads)
+        return out
