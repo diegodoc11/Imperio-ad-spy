@@ -481,3 +481,41 @@ async function loadTranscript(p, id) {
 function copiar(id) { navigator.clipboard.writeText(document.getElementById(id).textContent); }
 function openHelp() { document.getElementById('help').classList.add('show'); }
 function closeHelp() { document.getElementById('help').classList.remove('show'); }
+
+// ---------- 🔬 modo investigación (transcribe en lote los ganadores + informe) ----------
+let RESEARCH_TIMER = null;
+let RESEARCH_WAS_RUNNING = false;
+async function investigar() {
+  const n = (prompt('🔬 ¿Cuántos videos transcribir?\n\nToma los que MÁS tiempo llevan activos (= los que están vendiendo), los descarga y transcribe en tu PC. Gratis, no gasta Apify.\n\nGuía: 20 ≈ 10-15 min · 40 ≈ 25-30 min', '30') || '').trim();
+  if (!n) return;
+  const st = document.getElementById('researchStatus');
+  st.innerHTML = '<span class="spin"></span> Iniciando…';
+  try {
+    const r = await (await fetch('/api/research/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ niche: NICHE, top_n: parseInt(n, 10) || 30 }) })).json();
+    if (!r.ok) throw new Error(r.error || 'error');
+    if (!r.total) { st.textContent = 'No hay videos con enlace vivo en este nicho. Scrapea primero.'; return; }
+    pollResearch();
+  } catch (e) { st.textContent = '❌ ' + e.message; }
+}
+async function pollResearch() {
+  clearTimeout(RESEARCH_TIMER);
+  const st = document.getElementById('researchStatus');
+  if (!st || !NICHE) return;
+  try {
+    const r = await (await fetch(`/api/research/status?niche=${encodeURIComponent(NICHE)}`)).json();
+    if (r.status === 'running') {
+      RESEARCH_WAS_RUNNING = true;
+      st.innerHTML = `<span class="spin"></span> Transcribiendo ${r.done + r.failed} de ${r.total}… <i>${esc(r.current || '')}</i>`;
+      RESEARCH_TIMER = setTimeout(pollResearch, 4000);
+    } else if (r.status === 'done') {
+      const fail = r.failed ? ` · ${r.failed} fallaron` : '';
+      st.innerHTML = `✅ ${r.done} guiones listos${fail} · <a class="dl" href="/api/research/export?niche=${encodeURIComponent(NICHE)}" download>⬇ Informe (.md)</a>`;
+      if (RESEARCH_WAS_RUNNING) { RESEARCH_WAS_RUNNING = false; await loadResults(); }
+    } else {
+      st.textContent = '';
+    }
+  } catch (e) { /* silencioso: no romper la UI por el estado */ }
+}
+// Al cargar y al cambiar de nicho, reflejar si hay una investigación en curso.
+setTimeout(pollResearch, 1500);
+document.getElementById('niche').addEventListener('change', () => setTimeout(pollResearch, 400));

@@ -89,7 +89,11 @@ bucket, meta_rank`.
 | GET | `/api/cooldown` | hace cuántos días se scrapeó cada término |
 | GET | `/api/search` | **multi-término** (coma), busca cada uno y mezcla; guarda en el pool |
 | GET | `/api/video` | descarga+cachea+sirve el .mp4 (FileResponse, soporta range) |
-| GET | `/api/thumb` | proxy de miniaturas (evita bloqueos de la CDN de FB) |
+| GET | `/api/thumb` | proxy de miniaturas (evita bloqueos de la CDN de FB); con `id=` sirve la `.jpg` local si existe |
+| POST | `/api/shortlist/cache-media` | backfill: descarga video+imagen de TODOS los Seleccionados con enlace vivo |
+| POST | `/api/research/start` | 🔬 transcribe en lote (hilo en 2º plano) los top-N videos del nicho, ganadores primero |
+| GET | `/api/research/status` | progreso del 🔬: `running/done`, done/failed/total, anunciante actual |
+| GET | `/api/research/export` | informe `.md` (copy + guion de los videos transcritos + copy de imágenes) → `downloads/investigacion_<nicho>.md` |
 
 Middleware: `Cache-Control: no-store` en TODA respuesta (ver lección de caché).
 
@@ -228,3 +232,21 @@ uv pip install -r requirements.txt        # o: uv pip install fastapi "uvicorn[s
   "scraped_at": { "<nicho>": { "<término>": "ISO" } }
 }
 ```
+
+## 11. Actualización — 🔬 Modo investigación y media blindada
+
+**Funciones añadidas:**
+- **⭐ Seleccionar descarga video + imagen a disco** (`_cache_ad_media`, hilo en 2º plano al hacer `POST /api/shortlist`). Antes seleccionar solo guardaba el JSON y el video se perdía cuando caducaba la URL de FB. `/api/thumb?id=` sirve la `.jpg` local si existe. La auto-limpieza ahora también gestiona `.jpg`.
+- **🔬 Investigar** (botón en la barra de Buscar): `POST /api/research/start {niche, top_n}` toma los top-N videos con `video_url` ordenados por `_by_winner` (más meses activo, desempate `meta_rank`), los descarga y transcribe en un hilo daemon (un trabajo por nicho, estado en `_RESEARCH`). El front hace polling a `/api/research/status` cada 4s y al terminar muestra **⬇ Informe** → `GET /api/research/export` genera `downloads/investigacion_<nicho>.md` (sección A: copy + guion de cada video transcrito; sección B: copy de los anuncios de imagen). Ese `.md` es lo que se le pasa a Claude para analizar el nicho.
+- **Backfill:** `POST /api/shortlist/cache-media` descarga la media de todos los Seleccionados que aún tengan enlace vivo.
+
+**Flujo de investigación de un nicho (probado 2026-09-25 con "Tratamientos faciales (CDMX)"):**
+1. Crear nicho → buscar 6 términos × 50, país MX y luego ALL (~600 anuncios, ~$0.45).
+2. 🔬 Investigar top 30 → ~15 min en CPU (modelo `small`), 30/30 OK.
+3. ⬇ Informe → Claude lee el `.md` y escribe el análisis (ganchos, ofertas, CTAs, ranking de guiones) → alimenta el skill `anuncios-meta`.
+
+⚠️ **Aprendizajes:**
+- **El ranking por tiempo activo se contamina** con anuncios irrelevantes que también llevan meses (una tienda de maquillaje, marcas de producto, escuelas). Hay que filtrar a mano al analizar. Idea futura: filtro de relevancia por palabras clave en el copy antes de elegir los top-N.
+- **Whisper `small` se come los nombres de marca/tecnología** ("Hollywood Steel" = Hollywood Peel, "termash" = Thermage, "Acnen" = acné). Sirve para el análisis, no para citar textual.
+- **Lanzar búsquedas con ñ/tildes desde la terminal de Windows corrompe el término** (llega `U+FFFD` a Apify y trae de menos). Desde el navegador funciona. Desde scripts: escribir el término en un `.py` UTF-8, nunca literal en la línea de comandos.
+- **El servidor lanzado con `run_in_background` del Bash se muere solo** (lo recoge el entorno; el log no muestra error). Lanzarlo con PowerShell `Start-Process` desacoplado.

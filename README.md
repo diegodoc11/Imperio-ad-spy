@@ -21,6 +21,10 @@ negocio. Ideal para marketers, agencias, creadores e infoproductores.
 - ➡️ Indica **a dónde envía** cada anuncio (WhatsApp, Instagram, web, app…).
 - ⭐ **Guarda** tus favoritos en "Seleccionados" (organizado por **nicho**).
 - 📝 **Transcribe** los videos **gratis y local** (Whisper) → copias el texto.
+- 🔬 **Investiga un nicho solo**: transcribe en lote los videos que **más tiempo llevan
+  activos** y te arma un **informe** (copy + guion de cada uno) para analizarlo con tu IA.
+- 💾 Al **guardar** un anuncio, su video e imagen se **descargan a tu PC** y no se pierden
+  aunque el enlace de Facebook caduque.
 - 💰 Muestra tu **saldo de Apify** y el **costo estimado** de cada búsqueda.
 - 🔁 **Guarda lo scrapeado** (no se pierde al cerrar) y te **avisa** si vas a
   re-scrapear algo reciente, para no gastar de más.
@@ -80,9 +84,14 @@ Abre **http://localhost:8000** en tu navegador.
 2. **Busca**: escribe una o varias palabras (`claude, automatizar con ia, anuncios con ia`),
    elige país y cantidad. Mira el **costo estimado** y pulsa **Buscar**.
 3. **Filtra** por ⏱️ tiempo activo y **ordena** (≈ impresiones de Meta, más antiguo, etc.).
-4. **▶ Ver** para reproducir; **☆ Guardar** los buenos (van a **⭐ Seleccionados**).
+4. **▶ Ver** para reproducir; **☆ Guardar** los buenos (van a **⭐ Seleccionados** y su
+   video e imagen quedan descargados en tu PC).
 5. En **⭐ Seleccionados**, pulsa **📝 Transcribir** (gratis, local) y copia el texto.
-6. Lleva esa transcripción a tu IA favorita para **adaptar el copy** a tu oferta.
+6. **🔬 Investigar** (en la barra de Buscar): dile cuántos videos y la app descarga y
+   transcribe **sola** los que más tiempo llevan activos. Al terminar, **⬇ Informe** te
+   da un `.md` con el copy y el guion de cada uno.
+7. Lleva ese informe (o una transcripción) a tu IA favorita para **analizar qué funciona**
+   y **adaptar el copy** a tu oferta.
 
 ---
 

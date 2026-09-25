@@ -117,6 +117,111 @@ def _mark_extras(ads):
     return ads
 
 
+# ---------- 🔬 Modo investigación ----------
+# Transcribe EN LOTE los mejores videos de un nicho (los que más tiempo llevan activos =
+# los que están vendiendo) y exporta un informe con copy + guion para analizar el nicho.
+_RESEARCH: dict = {}  # nicho -> estado del trabajo en curso
+_RESEARCH_LOCK = threading.Lock()
+
+
+def _by_winner(a: dict):
+    """Orden 'ganadores primero': más meses activo, desempate por orden de Meta."""
+    return (-(a.get("months_active") or 0), a.get("meta_rank") if a.get("meta_rank") is not None else 10**9)
+
+
+def _research_pick(niche: str, top_n: int) -> list:
+    ads = [a for a in STORE.results(niche) if a.get("has_video") and a.get("video_url")]
+    _mark_extras(ads)
+    ads.sort(key=_by_winner)
+    return ads[:top_n]
+
+
+def _research_worker(niche: str, ads: list):
+    st = _RESEARCH[niche]
+    for a in ads:
+        lid = _safe_id(str(a.get("library_id") or ""))
+        st["current"] = a.get("advertiser") or lid
+        try:
+            if not (DOWNLOADS / f"{lid}.txt").exists():
+                dest = DOWNLOADS / f"{lid}.mp4"
+                tx.download_video(a["video_url"], dest)
+                result = tx.transcribe_path(dest)
+                (DOWNLOADS / f"{lid}.txt").write_text(result["text"], encoding="utf-8")
+                (DOWNLOADS / f"{lid}.srt").write_text(tx.to_srt(result["segments"]), encoding="utf-8")
+            if a.get("thumbnail_url"):  # la imagen también sirve de referencia
+                try:
+                    tx.download_file(a["thumbnail_url"], DOWNLOADS / f"{lid}.jpg")
+                except Exception:
+                    pass
+            st["done"] += 1
+        except Exception as e:
+            st["failed"] += 1
+            st["errors"].append(f"{a.get('advertiser') or lid}: {str(e)[:70]}")
+    st["status"] = "done"
+    st["current"] = ""
+
+
+@app.post("/api/research/start")
+def research_start(payload: dict = Body(...)):
+    """Arranca (en segundo plano) la transcripción de los top-N videos del nicho."""
+    niche = payload.get("niche")
+    top_n = int(payload.get("top_n") or 30)
+    if not niche:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "falta niche"})
+    with _RESEARCH_LOCK:
+        cur = _RESEARCH.get(niche)
+        if cur and cur.get("status") == "running":
+            return {"ok": True, "already_running": True, **cur}
+        ads = _research_pick(niche, top_n)
+        _RESEARCH[niche] = {"status": "running", "total": len(ads), "done": 0,
+                            "failed": 0, "current": "", "errors": []}
+    threading.Thread(target=_research_worker, args=(niche, ads), daemon=True).start()
+    return {"ok": True, **_RESEARCH[niche]}
+
+
+@app.get("/api/research/status")
+def research_status(niche: str):
+    idle = {"status": "idle", "total": 0, "done": 0, "failed": 0, "current": "", "errors": []}
+    return {"ok": True, **(_RESEARCH.get(niche) or idle)}
+
+
+@app.get("/api/research/export")
+def research_export(niche: str, top_n: int = 60):
+    """Informe .md del nicho: copy + guion de los videos transcritos (ganadores primero)
+    y el copy de los anuncios de imagen. Es lo que se le pasa a Claude para analizar."""
+    ads = _mark_extras(STORE.results(niche))
+    vids = sorted([a for a in ads if a.get("has_transcript")], key=_by_winner)
+    imgs = sorted([a for a in ads if not a.get("has_video")], key=_by_winner)
+
+    def meta(a: dict) -> list:
+        cta = a.get("cta_text") or "—"
+        dest = a.get("dest_label") or a.get("dest_type") or "—"
+        dom = f" · {a.get('dest_domain')}" if a.get("dest_domain") else ""
+        return [
+            f"- **Tiempo activo:** {a.get('months_active') or 0} meses (publicado {a.get('start_date') or '?'})",
+            f"- **CTA:** {cta} → {dest}{dom}",
+            f"- **Copias del anuncio:** {a.get('collation_count') or 1} · FB: {a.get('ad_url') or '—'}",
+        ]
+
+    L = [f"# 🔬 Investigación de anuncios — {niche}",
+         f"_Generado: {datetime.now():%Y-%m-%d %H:%M}_  ",
+         f"Pool: **{len(ads)}** anuncios · **{len(vids)}** videos transcritos · **{len(imgs)}** solo imagen",
+         "", "## A) VIDEOS con guion transcrito (ordenados: más tiempo activo primero)", ""]
+    for i, a in enumerate(vids[:top_n], 1):
+        lid = _safe_id(str(a.get("library_id") or ""))
+        guion = (DOWNLOADS / f"{lid}.txt").read_text(encoding="utf-8", errors="ignore").strip()
+        L += [f"### {i}. {a.get('advertiser') or '(sin nombre)'}", *meta(a), "",
+              f"**Copy del anuncio:**  \n{(a.get('copy') or '(sin texto)').strip()}", "",
+              f"**Guion del video (transcripción):**  \n{guion or '(vacío)'}", "", "---", ""]
+    L += ["## B) ANUNCIOS DE IMAGEN (solo copy; ordenados: más tiempo activo primero)", ""]
+    for i, a in enumerate(imgs[:top_n], 1):
+        L += [f"### {i}. {a.get('advertiser') or '(sin nombre)'}", *meta(a), "",
+              f"**Copy:**  \n{(a.get('copy') or '(sin texto)').strip()}", "", "---", ""]
+    out = DOWNLOADS / f"investigacion_{_safe_id(niche)}.md"
+    out.write_text("\n".join(L), encoding="utf-8")
+    return FileResponse(str(out), media_type="text/markdown", filename=out.name)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (STATIC / "index.html").read_text(encoding="utf-8")
